@@ -1,1 +1,0 @@
-# igor-servidor-sinalizacao
