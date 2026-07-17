@@ -1,7 +1,7 @@
 {
   "name": "servidor-sinalizacao",
   "version": "1.0.0",
-  "description": "Servidor WebRTC IGOR PROYECTOS",
+  "description": "Servidor WebRTC para monitoramento",
   "main": "server.js",
   "dependencies": {
     "express": "^4.18.2",
