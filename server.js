@@ -8,14 +8,13 @@ app.use(cors());
 app.get('/', (req, res) => { res.send('Servidor de Monitoramento Avançado Online! 🟢'); });
 
 let estadoDoMosaico = { funcionarios: {} };
-let socketMap = {}; // Associa a conexão de internet ao ID do funcionário
+let socketMap = {}; 
 
 io.on('connection', (socket) => {
   socket.on('join-room', (data) => {
     const room = data.room || data;
     const role = data.role || 'desconhecido';
     socket.join(room);
-    // Se for o painel HTML atualizando, manda o histórico
     if (role === 'monitor') {
         socket.emit('sync_initial_state', estadoDoMosaico.funcionarios);
     }
@@ -23,7 +22,8 @@ io.on('connection', (socket) => {
 
   socket.on('funcionario_online', (data) => {
     socketMap[socket.id] = data.id; 
-    estadoDoMosaico.funcionarios[data.id] = { ...data, status: 'activo', motivo: "" };
+    // Salva nome, telas e a nova variável FUNÇÃO na memória
+    estadoDoMosaico.funcionarios[data.id] = { ...estadoDoMosaico.funcionarios[data.id], ...data, status: 'activo', motivo: "" };
     socket.to(data.room).emit('funcionario_online', data);
   });
 
