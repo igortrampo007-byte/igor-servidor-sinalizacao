@@ -2,47 +2,29 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 const http = require('http').createServer(app);
-
-const io = require('socket.io')(http, {
-  cors: { origin: "*", methods: ["GET", "POST"] }
-});
+const io = require('socket.io')(http, { cors: { origin: "*", methods: ["GET", "POST"] } });
 app.use(cors());
 
-app.get('/', (req, res) => { res.send('Servidor de Monitoramento com Memória Online! 🟢'); });
+app.get('/', (req, res) => { res.send('Servidor de Monitoramento 🟢'); });
 
-// 🧠 A MEMÓRIA DO SERVIDOR: Onde guardamos o estado de quem está online
-let estadoDoMosaico = {
-    funcionarios: {} // Guardará { id_func: { dados_do_funcionario } }
-};
+let estadoDoMosaico = { funcionarios: {} };
+let socketMap = {}; // 🟢 CORREÇÃO 2: Lembra qual internet/conexão pertence a qual funcionário
 
 io.on('connection', (socket) => {
-  console.log('Novo dispositivo conectado:', socket.id);
-
-  // 1. Ouvindo o pedido de entrada na sala
   socket.on('join-room', (data) => {
-    const room = data.room || data; // Suporta formato antigo e novo
-    const role = data.role || 'desconhecido'; // 'agente' (Python) ou 'monitor' (HTML)
-    
+    const room = data.room || data;
+    const role = data.role || 'desconhecido';
     socket.join(room);
-    console.log(`Dispositivo ${socket.id} entrou na sala ${room} como ${role}`);
-
-    // 🔄 SINCRONISMO INICIAL (O pulo do gato)
-    // Se quem entrou foi o Painel HTML (monitor), enviamos o estado atual completo imediamente
-    if (role === 'monitor') {
-        socket.emit('sync_initial_state', estadoDoMosaico.funcionarios);
-        console.log(`📤 Estado sincronizado para o painel ${socket.id}`);
-    }
+    if (role === 'monitor') socket.emit('sync_initial_state', estadoDoMosaico.funcionarios);
   });
 
-  // Eventos de Status Visual (Python -> Servidor -> HTML)
   socket.on('funcionario_online', (data) => {
-    // Salva na memória do servidor antes de repassar
+    socketMap[socket.id] = data.id; // Salva o vínculo
     estadoDoMosaico.funcionarios[data.id] = { ...data, status: 'activo', motivo: "" };
     socket.to(data.room).emit('funcionario_online', data);
   });
 
   socket.on('funcionario_ausente', (data) => {
-    // Atualiza a memória
     if (estadoDoMosaico.funcionarios[data.id]) {
         estadoDoMosaico.funcionarios[data.id].status = 'ausente';
         estadoDoMosaico.funcionarios[data.id].motivo = data.motivo;
@@ -51,32 +33,25 @@ io.on('connection', (socket) => {
   });
 
   socket.on('funcionario_offline', (data) => {
-    // Remove da memória
     delete estadoDoMosaico.funcionarios[data.id];
+    delete socketMap[socket.id];
     socket.to(data.room).emit('funcionario_offline', data);
   });
 
-  // Evento de Resolução Dinâmica (HTML -> Servidor -> Python)
-  socket.on('set_resolution', (data) => {
-    socket.to(data.room).emit('set_resolution', data.resolution, data.idFuncionario);
-  });
-
-  // Eventos de Vídeo (WebRTC Signaling)
+  socket.on('set_resolution', (data) => { socket.to(data.room).emit('set_resolution', data.resolution, data.idFuncionario); });
   socket.on('offer', (data) => { socket.to(data.room).emit('offer', data.offer, data.idFuncionario); });
   socket.on('answer', (data) => { socket.to(data.room).emit('answer', data.answer, data.idFuncionario); });
   socket.on('ice-candidate', (data) => { socket.to(data.room).emit('ice-candidate', data.candidate, data.idFuncionario); });
 
-  // 🛑 Se a conexão cair abruptamente (queda de energia/internet do funcionário)
   socket.on('disconnect', () => {
-    // Precisamos varrer a memória para ver se o socket que caiu era um funcionário
-    for (const id in estadoDoMosaico.funcionarios) {
-        // Nota: O Socket.io não guarda o ID do funcionário no disconnect padrão, 
-        // mas o WebRTC cairá e o painel notará o FPS zerado. 
-        // Em uma versão futura, podemos associar socket.id ao id do funcionário para remover automaticamente aqui.
+    // 🟢 APAGA DA MEMÓRIA SE O FUNCIONÁRIO CAIR
+    const userId = socketMap[socket.id];
+    if (userId) {
+        delete estadoDoMosaico.funcionarios[userId];
+        delete socketMap[socket.id];
+        socket.to('sala-monitoramento').emit('funcionario_offline', { id: userId });
     }
-    console.log('Dispositivo desconectado:', socket.id);
   });
 });
 
-const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => { console.log(`Rodando na porta ${PORT}`); });
+http.listen(process.env.PORT || 3000);
